@@ -1,0 +1,139 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String         @id @default(auto()) @map("_id") @db.ObjectId
+  name           String
+  email          String         @unique
+  password       String
+  phone          String?
+  role           String         @default("PATIENT") // PATIENT, DOCTOR, ADMIN
+  accountStatus  String         @default("ACTIVE")  // ACTIVE, SUSPENDED, PENDING
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  doctor         Doctor?
+  patient        Patient?
+  notifications  Notification[]
+  auditLogs      AuditLog[]     @relation("UserAuditLogs")
+}
+
+model Doctor {
+  id                  String         @id @default(auto()) @map("_id") @db.ObjectId
+  userId              String         @unique @db.ObjectId
+  title               String         @default("Dr.")
+  specialization      String
+  qualification       String
+  bmdcNumber          String?        // Bangladesh Medical & Dental Council Reg No
+  isDemo              Boolean        @default(false)
+  verificationStatus  String         @default("PENDING") // PENDING, VERIFIED, REJECTED, DEMO
+  accountStatus       String         @default("ACTIVE")  // ACTIVE, SUSPENDED
+  experience          Int            @default(0)
+  fee                 Float          @default(500)
+  chamberName         String?
+  chamberAddress      String?
+  availableDays       String         @default("Sat,Sun,Mon,Tue,Wed")
+  startTime           String         @default("16:00")
+  endTime             String         @default("21:00")
+  appointmentDuration Int            @default(15)        // Minutes per patient
+  maxDailyPatients    Int            @default(30)
+  bio                 String?
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  user                User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  appointments        Appointment[]
+  prescriptions       Prescription[]
+  leaves              DoctorLeave[]
+}
+
+model DoctorLeave {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  doctorId  String   @db.ObjectId
+  date      String   // YYYY-MM-DD
+  reason    String?
+  createdAt DateTime @default(now())
+
+  doctor    Doctor   @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+
+  @@unique([doctorId, date])
+}
+
+model Patient {
+  id           String        @id @default(auto()) @map("_id") @db.ObjectId
+  userId       String        @unique @db.ObjectId
+  age          Int?
+  gender       String?
+  address      String?
+  bloodGroup   String?
+  createdAt    DateTime      @default(now())
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  appointments Appointment[]
+}
+
+model Appointment {
+  id           String        @id @default(auto()) @map("_id") @db.ObjectId
+  patientId    String        @db.ObjectId
+  doctorId     String        @db.ObjectId
+  date         String        // YYYY-MM-DD
+  timeSlot     String        // HH:mm
+  serialNo     Int
+  status       String        @default("WAITING") // WAITING, CONFIRMED, COMPLETED, CANCELLED
+  symptoms     String?
+  notes        String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  patient      Patient       @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  doctor       Doctor        @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  prescription Prescription?
+
+  @@unique([doctorId, date, timeSlot])
+}
+
+model Prescription {
+  id            String      @id @default(auto()) @map("_id") @db.ObjectId
+  appointmentId String      @unique @db.ObjectId
+  doctorId      String      @db.ObjectId
+  diagnosis     String
+  medicines     String      // Structured drug lines: name, dosage, frequency, duration, instructions
+  advice        String?
+  nextVisit     String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  appointment   Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  doctor        Doctor      @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+}
+
+model Notification {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String   @db.ObjectId
+  title     String
+  message   String
+  type      String   // APPOINTMENT, PRESCRIPTION, SYSTEM
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model AuditLog {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  actorId    String   @db.ObjectId
+  actorRole  String
+  action     String   // e.g. "APPROVE_DOCTOR", "CANCEL_APPOINTMENT", "ISSUE_PRESCRIPTION"
+  targetType String   // "Appointment", "Doctor", "User", "Prescription"
+  targetId   String
+  details    String?
+  createdAt  DateTime @default(now())
+
+  actor      User     @relation("UserAuditLogs", fields: [actorId], references: [id], onDelete: Cascade)
+}
